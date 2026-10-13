@@ -1,0 +1,30 @@
+# Construir con el contexto en la RAÍZ del repo:
+#   docker build -f rest_api/Dockerfile.api -t scrapling-api .
+FROM python:3.12-slim-trixie
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+WORKDIR /srv
+# Scrapling desde el código de este fork + dependencias de la API
+COPY pyproject.toml README.md LICENSE MANIFEST.in setup.cfg /srv/scrapling-src/
+COPY scrapling /srv/scrapling-src/scrapling
+COPY rest_api/requirements.txt /srv/requirements.txt
+RUN pip install /srv/scrapling-src"[fetchers]" -r /srv/requirements.txt \
+    && playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright \
+    && rm -rf /var/lib/apt/lists/* /srv/scrapling-src
+
+COPY rest_api/app /srv/app
+
+RUN useradd --system --uid 10001 --create-home scraper
+USER scraper
+
+ENV SCRAPER_API_KEYS="" RATE_LIMIT_PER_MIN=60 MAX_BROWSERS=2 MAX_RESPONSE_MB=5 \
+    REQUEST_TIMEOUT_S=30 RESPECT_ROBOTS=false ENABLE_DOCS=false
+
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)"]
+
+CMD ["uvicorn", "app.main:create_default", "--factory", "--host", "0.0.0.0", "--port", "8000"]
