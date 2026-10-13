@@ -3,6 +3,7 @@ import logging
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .config import Settings
@@ -37,6 +38,14 @@ class CrawlReq(BaseModel):
     selectors: dict[str, str] | None = None
 
 
+def _resp(*codes: int) -> dict:
+    d = {401: "API key ausente, inválida o deshabilitada", 403: "Bloqueado por robots.txt (los destinos internos o no permitidos devuelven 400)",
+         413: "Respuesta demasiado grande", 429: "Límite de peticiones o cuota diaria excedidos (cabecera Retry-After)",
+         502: "Error al obtener la página de destino", 504: "Tiempo de espera agotado", 404: "No encontrado",
+         503: "Servidor sin claves configuradas o almacén de claves no disponible"}
+    return {c: {"description": d[c]} for c in codes}
+
+
 def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None, redis=None) -> FastAPI:
     s = settings or Settings.from_env()
     app = FastAPI(
@@ -63,15 +72,24 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None,
                                 int(resp.headers.get("content-length") or 0))
         return resp
 
+    if s.cors_origins:  # añadido tras `usage` => más externo: la preflight no llega a contar uso
+        app.add_middleware(
+            CORSMiddleware, allow_origins=s.cors_origins, allow_methods=["GET", "POST"],
+            allow_headers=["X-API-Key", "Content-Type"], allow_credentials=False,
+            max_age=600, expose_headers=["Retry-After"],
+        )
+
     def _err(e: FetchError):
         log.info("fetch error code=%s", e.code)
         return HTTPException(e.code, str(e))
 
-    @app.get("/health")
+    @app.get("/health", summary="Estado del servicio", description="Comprobación de vida; no requiere clave.")
     async def health():
         return {"status": "ok"}
 
-    @app.post("/v1/scrape")
+    @app.post("/v1/scrape", summary="Descargar una página",
+              description="Obtiene la URL (modo `http` o `browser`) y devuelve html y texto plano.",
+              responses=_resp(401, 403, 413, 429, 502, 504))
     async def scrape(req: ScrapeReq, who: str = Depends(require_api_key)):
         try:
             p = await app.state.fetcher.fetch(req.url, req.mode, req.wait_for, req.timeout, req.headers)
@@ -81,7 +99,9 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None,
         return {"status": p.status, "url_final": p.url_final, "html": p.html,
                 "text": p.selector().get_all_text(strip=True)}
 
-    @app.post("/v1/extract")
+    @app.post("/v1/extract", summary="Extraer campos con selectores CSS",
+              description="Descarga la URL y extrae `selectors` (nombre -> selector CSS); `many` devuelve listas.",
+              responses=_resp(401, 403, 413, 429, 502, 504))
     async def extract(req: ExtractReq, who: str = Depends(require_api_key)):
         try:
             p = await app.state.fetcher.fetch(req.url, req.mode, req.wait_for, req.timeout, req.headers)
@@ -92,7 +112,9 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None,
         log.info("extract system=%s mode=%s status=%s", who, req.mode, p.status)
         return {"status": p.status, "url_final": p.url_final, "data": data}
 
-    @app.post("/v1/crawl", status_code=202)
+    @app.post("/v1/crawl", status_code=202, summary="Iniciar un crawl asíncrono",
+              description="Crea un job de crawl; consulta el resultado en `/v1/jobs/{job_id}`.",
+              responses=_resp(401, 403, 429))
     async def crawl(req: CrawlReq, who: str = Depends(require_api_key)):
         try:
             app.state.fetcher._check(req.start_url)
@@ -105,7 +127,9 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None,
         t.add_done_callback(app.state.tasks.discard)
         return {"job_id": job["id"], "status": job["status"], "max_pages": max_pages}
 
-    @app.get("/v1/jobs/{job_id}")
+    @app.get("/v1/jobs/{job_id}", summary="Consultar un job de crawl",
+             description="Cada sistema solo ve sus propios jobs.",
+             responses=_resp(401, 404, 429))
     async def job(job_id: str, who: str = Depends(require_api_key)):
         j = app.state.jobs.jobs.get(job_id)
         if not j or j["owner"] != who:  # cada sistema solo ve sus jobs

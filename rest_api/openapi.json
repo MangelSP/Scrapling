@@ -1,0 +1,496 @@
+{
+  "components": {
+    "schemas": {
+      "CrawlReq": {
+        "properties": {
+          "max_pages": {
+            "default": 10,
+            "minimum": 1.0,
+            "title": "Max Pages",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "http",
+            "enum": [
+              "http",
+              "browser"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "same_domain": {
+            "default": true,
+            "title": "Same Domain",
+            "type": "boolean"
+          },
+          "selectors": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selectors"
+          },
+          "start_url": {
+            "title": "Start Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_url"
+        ],
+        "title": "CrawlReq",
+        "type": "object"
+      },
+      "ExtractReq": {
+        "properties": {
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
+          },
+          "many": {
+            "default": false,
+            "title": "Many",
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "http",
+            "enum": [
+              "http",
+              "browser"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 50,
+            "minProperties": 1,
+            "title": "Selectors",
+            "type": "object"
+          },
+          "timeout": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 120.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "wait_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait For"
+          }
+        },
+        "required": [
+          "url",
+          "selectors"
+        ],
+        "title": "ExtractReq",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ScrapeReq": {
+        "properties": {
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
+          },
+          "mode": {
+            "default": "http",
+            "enum": [
+              "http",
+              "browser"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "timeout": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 120.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "wait_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait For"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "ScrapeReq",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyHeader": {
+        "description": "Clave de API del sistema (cabecera X-API-Key).",
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "title": "Scrapling REST API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Comprobación de vida; no requiere clave.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Estado del servicio"
+      }
+    },
+    "/v1/crawl": {
+      "post": {
+        "description": "Crea un job de crawl; consulta el resultado en `/v1/jobs/{job_id}`.",
+        "operationId": "crawl_v1_crawl_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrawlReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "API key ausente, inválida o deshabilitada"
+          },
+          "403": {
+            "description": "Bloqueado por robots.txt (los destinos internos o no permitidos devuelven 400)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Límite de peticiones o cuota diaria excedidos (cabecera Retry-After)"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Iniciar un crawl asíncrono"
+      }
+    },
+    "/v1/extract": {
+      "post": {
+        "description": "Descarga la URL y extrae `selectors` (nombre -> selector CSS); `many` devuelve listas.",
+        "operationId": "extract_v1_extract_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "API key ausente, inválida o deshabilitada"
+          },
+          "403": {
+            "description": "Bloqueado por robots.txt (los destinos internos o no permitidos devuelven 400)"
+          },
+          "413": {
+            "description": "Respuesta demasiado grande"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Límite de peticiones o cuota diaria excedidos (cabecera Retry-After)"
+          },
+          "502": {
+            "description": "Error al obtener la página de destino"
+          },
+          "504": {
+            "description": "Tiempo de espera agotado"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Extraer campos con selectores CSS"
+      }
+    },
+    "/v1/jobs/{job_id}": {
+      "get": {
+        "description": "Cada sistema solo ve sus propios jobs.",
+        "operationId": "job_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "API key ausente, inválida o deshabilitada"
+          },
+          "404": {
+            "description": "No encontrado"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Límite de peticiones o cuota diaria excedidos (cabecera Retry-After)"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Consultar un job de crawl"
+      }
+    },
+    "/v1/scrape": {
+      "post": {
+        "description": "Obtiene la URL (modo `http` o `browser`) y devuelve html y texto plano.",
+        "operationId": "scrape_v1_scrape_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "API key ausente, inválida o deshabilitada"
+          },
+          "403": {
+            "description": "Bloqueado por robots.txt (los destinos internos o no permitidos devuelven 400)"
+          },
+          "413": {
+            "description": "Respuesta demasiado grande"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Límite de peticiones o cuota diaria excedidos (cabecera Retry-After)"
+          },
+          "502": {
+            "description": "Error al obtener la página de destino"
+          },
+          "504": {
+            "description": "Tiempo de espera agotado"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Descargar una página"
+      }
+    }
+  }
+}
