@@ -296,7 +296,7 @@
             "description": "API key ausente, inválida o deshabilitada"
           },
           "403": {
-            "description": "Destino no permitido (SSRF/robots)"
+            "description": "Bloqueado por robots.txt (los destinos internos o no permitidos devuelven 400)"
           },
           "422": {
             "content": {
@@ -347,7 +347,7 @@
             "description": "API key ausente, inválida o deshabilitada"
           },
           "403": {
-            "description": "Destino no permitido (SSRF/robots)"
+            "description": "Bloqueado por robots.txt (los destinos internos o no permitidos devuelven 400)"
           },
           "413": {
             "description": "Respuesta demasiado grande"
@@ -459,7 +459,7 @@
             "description": "API key ausente, inválida o deshabilitada"
           },
           "403": {
-            "description": "Destino no permitido (SSRF/robots)"
+            "description": "Bloqueado por robots.txt (los destinos internos o no permitidos devuelven 400)"
           },
           "413": {
             "description": "Respuesta demasiado grande"

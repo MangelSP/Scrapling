@@ -39,7 +39,7 @@ class CrawlReq(BaseModel):
 
 
 def _resp(*codes: int) -> dict:
-    d = {401: "API key ausente, inválida o deshabilitada", 403: "Destino no permitido (SSRF/robots)",
+    d = {401: "API key ausente, inválida o deshabilitada", 403: "Bloqueado por robots.txt (los destinos internos o no permitidos devuelven 400)",
          413: "Respuesta demasiado grande", 429: "Límite de peticiones o cuota diaria excedidos (cabecera Retry-After)",
          502: "Error al obtener la página de destino", 504: "Tiempo de espera agotado", 404: "No encontrado",
          503: "Servidor sin claves configuradas o almacén de claves no disponible"}
