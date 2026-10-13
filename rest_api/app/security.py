@@ -11,7 +11,8 @@ from urllib.parse import urlsplit
 
 from datetime import datetime, timezone
 
-from fastapi import Header, HTTPException, Request
+from fastapi import Depends, HTTPException, Request
+from fastapi.security import APIKeyHeader
 
 log = logging.getLogger("scraper-api")
 USAGE_TTL_S = 90 * 24 * 3600
@@ -25,6 +26,11 @@ class SSRFError(ValueError):
 
 
 # ---------- Auth ----------
+# auto_error=False: la validación (401/503) sigue siendo la de require_api_key.
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False,
+                              description="Clave de API del sistema (cabecera X-API-Key).")
+
+
 def authenticate(provided: str | None, keys: dict[str, str]) -> str | None:
     """Devuelve el nombre del sistema o None. Compara TODAS las claves en tiempo constante."""
     if not provided:
@@ -56,7 +62,7 @@ async def _lookup_redis(r, provided: str) -> dict | None:
     return rec if isinstance(rec, dict) and rec.get("system") else None
 
 
-async def require_api_key(request: Request, x_api_key: str | None = Header(default=None)) -> str:
+async def require_api_key(request: Request, x_api_key: str | None = Depends(api_key_header)) -> str:
     st = request.app.state
     r = getattr(st, "redis", None)
     if not st.settings.api_keys and r is None:

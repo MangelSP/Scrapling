@@ -20,6 +20,11 @@ def parse_api_keys(raw: str) -> dict[str, str]:
     return keys
 
 
+def parse_origins(raw: str) -> list[str]:
+    """'https://a.com, http://localhost:8080/' -> ['https://a.com', 'http://localhost:8080']. '*' se ignora."""
+    return [o.strip().rstrip("/") for o in raw.split(",") if o.strip() and o.strip() != "*"]
+
+
 @dataclass
 class Settings:
     api_keys: dict[str, str] = field(default_factory=dict)
@@ -33,6 +38,7 @@ class Settings:
     max_crawl_pages_cap: int = 50  # tope duro absoluto de /v1/crawl
     max_jobs: int = 100
     redis_url: str | None = None
+    cors_origins: list[str] = field(default_factory=list)  # vacío = sin CORS
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -45,5 +51,6 @@ class Settings:
             respect_robots=_bool("RESPECT_ROBOTS", False),
             enable_docs=_bool("ENABLE_DOCS", False),
             redis_url=os.getenv("REDIS_URL") or None,
+            cors_origins=parse_origins(os.getenv("CORS_ORIGINS", "")),
             max_crawl_pages_cap=int(os.getenv("MAX_CRAWL_PAGES", "50")),
         )
