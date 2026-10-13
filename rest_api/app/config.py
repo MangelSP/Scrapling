@@ -32,6 +32,7 @@ class Settings:
     max_redirects: int = 5
     max_crawl_pages_cap: int = 50  # tope duro absoluto de /v1/crawl
     max_jobs: int = 100
+    redis_url: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -43,5 +44,6 @@ class Settings:
             request_timeout_s=float(os.getenv("REQUEST_TIMEOUT_S", "30")),
             respect_robots=_bool("RESPECT_ROBOTS", False),
             enable_docs=_bool("ENABLE_DOCS", False),
+            redis_url=os.getenv("REDIS_URL") or None,
             max_crawl_pages_cap=int(os.getenv("MAX_CRAWL_PAGES", "50")),
         )

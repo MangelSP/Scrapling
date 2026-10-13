@@ -39,3 +39,11 @@ Tests: `pip install -r rest_api/requirements-dev.txt && cd rest_api && pytest` (
 - El tamaño se comprueba tras la descarga (no corta en streaming).
 - Rate limit y jobs en memoria: se pierden al reiniciar; una sola réplica.
 - No se persiste contenido scrapeado; los logs no incluyen URLs, cuerpos ni claves.
+
+## Claves y cuotas en Redis (opcional)
+
+Con `REDIS_URL` definido, `X-API-Key` se valida contra `scraper:keys:<sha256hex(clave)>` →
+`{"system","rate_per_min","daily_quota","enabled"}` (`daily_quota` 0/ausente = sin cuota).
+`SCRAPER_API_KEYS` sigue funcionando como respaldo. El rate limit (ventana fija por sistema y minuto) y
+la cuota diaria (429) pasan a Redis; el uso se acumula en el hash `scraper:usage:<sistema>:<YYYYMMDD>`
+(`requests`, `errors`, `bytes`, TTL 90 días). Sin `REDIS_URL` todo sigue en memoria.
