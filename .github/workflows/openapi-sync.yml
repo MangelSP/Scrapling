@@ -1,0 +1,27 @@
+name: OpenAPI sync
+# Al cambiar el contrato del scraper en main, avisa a corewave-docs para que abra un PR
+# con rest_api/openapi.json -> openapi/scraper.json. Requiere el secreto DOCS_DISPATCH_TOKEN
+# (PAT fine-grained con permiso de escritura "Contents" sobre MangelSP/corewave-docs).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rest_api/openapi.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify corewave-docs
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "DOCS_DISPATCH_TOKEN no configurado; omitido"; exit 0; fi
+          gh api repos/MangelSP/corewave-docs/dispatches \
+            -f event_type=scraper-openapi-updated \
+            -f "client_payload[sha]=${{ github.sha }}" \
+            -f "client_payload[repo]=${{ github.repository }}"
