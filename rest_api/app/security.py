@@ -1,12 +1,20 @@
 """Autenticación, rate limit y protección SSRF."""
+import hashlib
 import hmac
 import ipaddress
+import json
+import logging
 import socket
 import time
 from collections import defaultdict, deque
 from urllib.parse import urlsplit
 
+from datetime import datetime, timezone
+
 from fastapi import Header, HTTPException, Request
+
+log = logging.getLogger("scraper-api")
+USAGE_TTL_S = 90 * 24 * 3600
 
 ALLOWED_PORTS = {80, 443}
 METADATA_IPS = {"169.254.169.254", "fd00:ec2::254", "100.100.100.200"}
@@ -28,16 +36,96 @@ def authenticate(provided: str | None, keys: dict[str, str]) -> str | None:
     return found
 
 
+def key_hash(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d")
+
+
+async def _lookup_redis(r, provided: str) -> dict | None:
+    """Registro de la clave en Redis (`scraper:keys:<sha256>`) o None si no existe."""
+    raw = await r.get(f"scraper:keys:{key_hash(provided)}")
+    if not raw:
+        return None
+    try:
+        rec = json.loads(raw)
+    except ValueError:
+        return None
+    return rec if isinstance(rec, dict) and rec.get("system") else None
+
+
 async def require_api_key(request: Request, x_api_key: str | None = Header(default=None)) -> str:
     st = request.app.state
-    if not st.settings.api_keys:
+    r = getattr(st, "redis", None)
+    if not st.settings.api_keys and r is None:
         raise HTTPException(503, "Servidor sin SCRAPER_API_KEYS configuradas")
-    name = authenticate(x_api_key, st.settings.api_keys)
-    if name is None:
+    if not x_api_key:
         raise HTTPException(401, "API key ausente o inválida")
+
+    name, rate, quota, redis_down = None, st.settings.rate_limit_per_min, None, False
+    if r is not None:
+        try:
+            rec = await _lookup_redis(r, x_api_key)
+        except Exception:
+            log.warning("redis no disponible al validar clave")
+            rec, redis_down = None, True
+        if rec is not None:
+            if not rec.get("enabled", True):
+                raise HTTPException(401, "API key ausente o inválida")
+            name = str(rec["system"])
+            rate = int(rec.get("rate_per_min") or rate)
+            quota = int(rec["daily_quota"]) if rec.get("daily_quota") else None
+    if name is None:
+        name = authenticate(x_api_key, st.settings.api_keys)  # respaldo: SCRAPER_API_KEYS
+        if name is None:
+            if redis_down:
+                raise HTTPException(503, "Almacén de claves no disponible")
+            raise HTTPException(401, "API key ausente o inválida")
+
+    request.state.system = name
+    if r is not None and not redis_down:
+        try:
+            await _redis_limits(r, name, rate, quota)
+            return name
+        except HTTPException:
+            raise
+        except Exception:
+            log.warning("redis no disponible para límites; uso memoria")
     if not st.limiter.allow(name):
         raise HTTPException(429, "Límite de peticiones excedido", headers={"Retry-After": "60"})
     return name
+
+
+async def _redis_limits(r, name: str, rate: int, quota: int | None) -> None:
+    """Ventana fija por sistema y minuto + cuota diaria; cuenta la petición en el hash de uso."""
+    window = int(time.time() // 60)
+    rl = f"scraper:rl:{name}:{window}"
+    n = await r.incr(rl)
+    if n == 1:
+        await r.expire(rl, 90)
+    if n > rate:
+        raise HTTPException(429, "Límite de peticiones excedido", headers={"Retry-After": "60"})
+    usage = f"scraper:usage:{name}:{_today()}"
+    total = await r.hincrby(usage, "requests", 1)
+    await r.expire(usage, USAGE_TTL_S)
+    if quota is not None and total > quota:
+        await r.hincrby(usage, "requests", -1)
+        raise HTTPException(429, "Cuota diaria excedida", headers={"Retry-After": "3600"})
+
+
+async def record_result(r, name: str, status: int, size: int) -> None:
+    """Errores y bytes del día para el sistema (no debe romper la respuesta)."""
+    try:
+        usage = f"scraper:usage:{name}:{_today()}"
+        if status >= 400:
+            await r.hincrby(usage, "errors", 1)
+        if size:
+            await r.hincrby(usage, "bytes", size)
+        await r.expire(usage, USAGE_TTL_S)
+    except Exception:
+        log.warning("no se pudo registrar uso")
 
 
 # ---------- Rate limit (ventana deslizante en memoria, por clave) ----------

@@ -2,14 +2,14 @@ import asyncio
 import logging
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .config import Settings
 from .crawl import JobStore, run_crawl
 from .extract import extract_fields, extract_many
 from .fetch import FetchError, Fetcher
-from .security import RateLimiter, require_api_key
+from .security import RateLimiter, record_result, require_api_key
 
 log = logging.getLogger("scraper-api")  # nunca se registran cuerpos ni claves
 
@@ -37,7 +37,7 @@ class CrawlReq(BaseModel):
     selectors: dict[str, str] | None = None
 
 
-def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None, redis=None) -> FastAPI:
     s = settings or Settings.from_env()
     app = FastAPI(
         title="Scrapling REST API", version="0.1.0",
@@ -45,10 +45,23 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None)
         redoc_url=None, openapi_url="/openapi.json" if s.enable_docs else None,
     )
     app.state.settings = s
+    if redis is None and s.redis_url:
+        from redis.asyncio import from_url  # import perezoso: solo si REDIS_URL está definido
+        redis = from_url(s.redis_url, decode_responses=True)
+    app.state.redis = redis
     app.state.limiter = RateLimiter(s.rate_limit_per_min)
     app.state.fetcher = fetcher or Fetcher(s)
     app.state.jobs = JobStore(s.max_jobs)
     app.state.tasks = set()
+
+    @app.middleware("http")
+    async def usage(request: Request, call_next):
+        resp = await call_next(request)
+        who = getattr(request.state, "system", None)
+        if who and app.state.redis is not None:
+            await record_result(app.state.redis, who, resp.status_code,
+                                int(resp.headers.get("content-length") or 0))
+        return resp
 
     def _err(e: FetchError):
         log.info("fetch error code=%s", e.code)
